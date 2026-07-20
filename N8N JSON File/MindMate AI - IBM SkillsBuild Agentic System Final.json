@@ -1,0 +1,486 @@
+{
+  "name": "MindMate AI - IBM SkillsBuild Agentic System Final",
+  "nodes": [
+    {
+      "parameters": {
+        "public": true,
+        "mode": "webhook",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -1040,
+        240
+      ],
+      "id": "573688fa-5dc6-4dc0-bef5-2fefdc929505",
+      "name": "Chat Trigger",
+      "webhookId": "5377f6ae-00ef-4eb5-b2f2-154ff33ff646"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.chatInput }}",
+        "options": {
+          "systemMessage": "ROLE: You are the MindMate Planner Agent, the orchestration layer of a multi-agent wellness system.\n\nRESPONSIBILITIES:\n1. Screen every incoming message for crisis risk BEFORE any other agent processes it.\n2. Classify whether the user is requesting medical diagnosis or medication (which downstream agents are forbidden from providing).\n3. Assign an urgency level to help route the conversation.\n\nCRISIS DEFINITION (is_crisis = true if ANY apply):\n- Explicit or implied suicidal ideation, intent, or planning\n- Self-harm intent or disclosure of active self-harm\n- Intent to harm another person\n- Statements indicating the user may be in immediate physical danger\n\nCONSTRAINTS:\n- You do not provide advice, comfort, or wellness content yourself. You only classify.\n- Do not soften or second-guess a crisis signal because the phrasing is casual, joking, or ambiguous — if in doubt, mark is_crisis = true.\n\nOUTPUT FORMAT — return ONLY this JSON object, no prose, no markdown fences, no explanation:\n{\n  \"is_crisis\": boolean,\n  \"is_medical_request\": boolean,\n  \"urgency\": \"low\" | \"medium\" | \"high\"\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -816,
+        240
+      ],
+      "id": "fa6a315a-f459-4621-8543-a21e11dd18cd",
+      "name": "Planner Agent"
+    },
+    {
+      "parameters": {
+        "jsCode": "let raw = $input.item.json.output || '';\nraw = raw.replace(/```json/g, '').replace(/```/g, '').trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(raw);\n} catch (e) {\n  // fail safe toward caution if the model ever returns malformed JSON\n  parsed = { is_crisis: false, is_medical_request: false, urgency: 'low' };\n}\n\nreturn [{ json: parsed }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -592,
+        240
+      ],
+      "id": "061ba282-2345-4cdf-a0c7-fef353598b12",
+      "name": "Parse Planner Output"
+    },
+    {
+      "parameters": {
+        "dataType": "boolean",
+        "value1": "={{ $json.is_crisis }}",
+        "rules": {
+          "rules": [
+            {
+              "value2": true
+            }
+          ]
+        },
+        "fallbackOutput": 1
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [
+        -368,
+        240
+      ],
+      "id": "c82c799d-570d-4f5e-a924-85ac48dd6782",
+      "name": "Crisis Triage"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "crisis-text",
+              "name": "output",
+              "type": "string",
+              "value": "It sounds like you're carrying something really heavy right now, and I'm glad you reached out.\n\nI'm an AI wellness companion, not a crisis service, and I'm not equipped to keep you safe on my own. Please reach out to a real person right now:\n\n- India — Kiran Mental Health Helpline: 1800-599-0019 (24/7, toll-free)\n- India — iCall (TISS): 9152987821\n- India — Emergency services: 112\n- Outside India: please contact your local emergency number or a crisis line in your country.\n\nIf you're in immediate danger, please call emergency services or go to the nearest hospital now. You don't have to go through this alone."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -128,
+        0
+      ],
+      "id": "0aed94be-a511-4e98-ba45-5da4fa6bbb0d",
+      "name": "Crisis Response (Deterministic)"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Chat Trigger').item.json.chatInput }}",
+        "options": {
+          "systemMessage": "ROLE: You are the Emotion Detection Agent.\n\nRESPONSIBILITIES:\nAnalyze the user's message and identify their primary emotional state from this fixed set: Stress, Anxiety, Burnout, Loneliness, Fear, Anger, Motivation, Confidence, Happiness, Neutral.\n\nCONSTRAINTS:\n- Pick exactly one primary emotion. You may name a secondary emotion if clearly present.\n- Do not speculate about clinical conditions (e.g. do not say \"depression\" or \"anxiety disorder\") — name the emotion, not a diagnosis.\n- Base the confidence score on how explicit the emotional language is, not on how severe the situation sounds.\n\nOUTPUT FORMAT — return ONLY this JSON object, no prose, no markdown fences:\n{\n  \"primary_emotion\": string,\n  \"secondary_emotion\": string | null,\n  \"confidence\": number between 0 and 1\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -128,
+        208
+      ],
+      "id": "da5f926d-67b5-4b20-a37e-fcca30f828d7",
+      "name": "Emotion Detection Agent"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Chat Trigger').item.json.chatInput }}",
+        "options": {
+          "systemMessage": "ROLE: You are the Issue Analysis Agent.\n\nRESPONSIBILITIES:\nIdentify the most likely root cause behind the user's message, from categories such as: Exam Stress, Relationship Issue, Career Confusion, Family Pressure, Financial Stress, Sleep Issue, Workload, Overthinking, or Other (specify briefly if none fit well).\n\nCONSTRAINTS:\n- Pick the single most likely root cause, not a list.\n- If genuinely unclear, say so rather than guessing confidently — output \"Unclear\" with a one-line note on what's missing.\n- Do not offer advice here; that is a different agent's job.\n\nOUTPUT FORMAT — return ONLY this JSON object, no prose, no markdown fences:\n{\n  \"root_cause\": string,\n  \"reasoning\": string (max 1 sentence)\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -128,
+        368
+      ],
+      "id": "36eac36d-fb0b-4503-bdf9-86d7d78ca6b3",
+      "name": "Issue Analysis Agent"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        224,
+        288
+      ],
+      "id": "b65c3b5a-bb65-4aae-beb2-08004386e006",
+      "name": "Merge Emotion + Issue"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Detected emotion: {{ $('Emotion Detection Agent').item.json.output }}\n\nDetected root issue: {{ $('Issue Analysis Agent').item.json.output }}\n\nOriginal user message: {{ $('Chat Trigger').item.json.chatInput }}",
+        "options": {
+          "systemMessage": "ROLE: You are the Wellness Recommendation Agent.\n\nRESPONSIBILITIES:\nBased on the detected emotion and root cause, recommend ONE relevant, evidence-based technique from: breathing exercises, grounding techniques, study/time-management techniques, sleep hygiene advice, mindfulness practices, or general self-care tips.\n\nCONSTRAINTS:\n- Exactly one technique, explained in 2-3 concrete, actionable sentences.\n- Never suggest medication, supplements, or anything requiring a prescription.\n- Never diagnose. You are recommending a coping technique, not treating a condition.\n- Match the tone to the emotion — calm and slow for anxiety/stress, energizing for burnout/low motivation.\n\nOUTPUT FORMAT: Plain text, 2-3 sentences. No JSON, no headers."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        448,
+        288
+      ],
+      "id": "cc1434b7-4d13-41ac-95b8-269c363dd958",
+      "name": "Wellness Recommendation Agent"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=\nDetected root issue: {{ $('Issue Analysis Agent').item.json.output }}",
+        "options": {
+          "systemMessage": "ROLE: You are the Habit Builder Agent.\n\nRESPONSIBILITIES:\nGenerate ONE small, concrete habit the user could start today, tied to the wellness recommendation and root issue already identified.\n\nCONSTRAINTS:\n- The habit must take under 5 minutes to start (a \"micro-habit\", e.g. \"put one book on your pillow before bed\" not \"establish a full sleep routine\").\n- Do not repeat the wellness technique — build on it with a habit that reinforces it over time.\n- Keep it specific and testable, not vague.\n\nOUTPUT FORMAT: Plain text, 1-2 sentences. No JSON, no headers."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        672,
+        288
+      ],
+      "id": "2f983e1f-b0a9-4557-bd5a-4f8204f43fbc",
+      "name": "Habit Builder Agent"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Detected emotion: {{ $('Emotion Detection Agent').item.json.output }}\n\nContext so far: wellness tip and micro-habit have already been generated for this user.",
+        "options": {
+          "systemMessage": "ROLE: You are the Motivation Agent.\n\nRESPONSIBILITIES:\nWrite ONE short, genuine encouraging message tailored to the user's detected emotional state.\n\nCONSTRAINTS:\n- No clichés (\"you've got this!\", \"everything happens for a reason\", \"stay strong\").\n- Ground it in something specific to their situation rather than generic positivity.\n- 1-2 sentences maximum.\n- Do not minimize what they're going through to sound upbeat.\n\nOUTPUT FORMAT: Plain text, 1-2 sentences. No JSON, no headers."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        896,
+        288
+      ],
+      "id": "00067b06-2bac-4a93-b732-a17186c5b614",
+      "name": "Motivation Agent"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Wellness recommendation: {{ $('Wellness Recommendation Agent').item.json.output }}\n\nHabit suggestion: {{ $('Habit Builder Agent').item.json.output }}\n\nMotivational message: {{ $json.output }}\n\nWas this flagged as a medical request by the planner? {{ $('Parse Planner Output').item.json.is_medical_request }}",
+        "options": {
+          "systemMessage": "ROLE: You are the Safety Validator Agent — the final content check before anything reaches the user. This is the most important role in the system.\n\nRESPONSIBILITIES:\n1. Scan all three inputs (wellness recommendation, habit suggestion, motivational message) for anything resembling a diagnosis, medication name, dosage, or clinical claim. Remove or rewrite it if found.\n2. If the medical-request flag is true, add one clear, non-alarming sentence recommending the user speak with a licensed doctor, therapist, or counselor for anything requiring medical judgment.\n3. Confirm none of the three inputs contradict each other or give conflicting advice.\n4. Output the three pieces, cleaned, ready for final synthesis.\n\nCONSTRAINTS:\n- You are a filter, not a rewriter of tone — preserve the original voice unless it violates a safety rule above.\n- Never remove the professional-help recommendation once added, even if asked implicitly to sound more casual.\n\nOUTPUT FORMAT: Plain text with three labeled sections: \"Wellness:\", \"Habit:\", \"Motivation:\" (add a fourth \"Note:\" line only if a professional-help recommendation was added)."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        1120,
+        288
+      ],
+      "id": "4fe5125f-d1ee-4289-9c83-ba282a0378f6",
+      "name": "Safety Validator Agent"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Validated content: {{ $json.output }}\n\nOriginal user message: {{ $('Chat Trigger').item.json.chatInput }}",
+        "options": {
+          "systemMessage": "ROLE: You are the Final Response Agent — the single voice the user actually hears.\n\nRESPONSIBILITIES:\nSynthesize the validated wellness content into ONE warm, cohesive, conversational message.\n\nSTRUCTURE:\n1. Brief empathetic reflection of their emotion and situation (1-2 sentences, not a repeated summary of what they said).\n2. The wellness tip and micro-habit, woven in naturally rather than listed.\n3. The motivational closing line.\n4. If a professional-help note was included by the Safety Validator, include it naturally, not as a bolted-on disclaimer.\n\nCONSTRAINTS:\n- Conversational tone, not clinical, not bullet points.\n- Keep it under 150 words.\n- Always end every message with exactly this line on its own: \"I'm an AI wellness companion, not a doctor. If you're in crisis, please contact emergency services or a mental health professional.\"\n\nOUTPUT FORMAT: Plain text chat message."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        1456,
+        288
+      ],
+      "id": "1ffe094d-132c-49fa-bc0f-a78fb7d34aa2",
+      "name": "Final Response Agent"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.1-flash-lite",
+        "options": {
+          "temperature": 0.7
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        224,
+        672
+      ],
+      "id": "30777d74-6705-43b6-9965-5b584fef7d20",
+      "name": "Gemini Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "PANX0WXt95es1XW3",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "{{ $json.sessionId }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        512,
+        672
+      ],
+      "id": "c5088aec-8e58-49b5-b70d-d8b2fc63997e",
+      "name": "Chat Memory"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Chat Trigger": {
+      "main": [
+        [
+          {
+            "node": "Planner Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Planner Output": {
+      "main": [
+        [
+          {
+            "node": "Crisis Triage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crisis Triage": {
+      "main": [
+        [
+          {
+            "node": "Crisis Response (Deterministic)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Emotion Detection Agent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Issue Analysis Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Emotion Detection Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge Emotion + Issue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Issue Analysis Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge Emotion + Issue",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Emotion + Issue": {
+      "main": [
+        [
+          {
+            "node": "Wellness Recommendation Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Planner Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Emotion Detection Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Issue Analysis Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Wellness Recommendation Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Habit Builder Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Motivation Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Safety Validator Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Final Response Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Planner Agent",
+            "type": "ai_memory",
+            "index": 0
+          },
+          {
+            "node": "Final Response Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Motivation Agent": {
+      "main": [
+        [
+          {
+            "node": "Safety Validator Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Safety Validator Agent": {
+      "main": [
+        [
+          {
+            "node": "Final Response Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wellness Recommendation Agent": {
+      "main": [
+        [
+          {
+            "node": "Habit Builder Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Habit Builder Agent": {
+      "main": [
+        [
+          {
+            "node": "Motivation Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Planner Agent": {
+      "main": [
+        [
+          {
+            "node": "Parse Planner Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "59f28a76-424b-4db5-9922-fb15038bca87",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "515e3fc8b1fddcae28d693379fd63048376459d47f84ab6cf82a87e26c198ce1"
+  },
+  "nodeGroups": [],
+  "id": "bugpOHxwEQ2I99QZ",
+  "tags": [
+    {
+      "updatedAt": "2026-07-18T18:37:50.519Z",
+      "createdAt": "2026-07-18T18:37:50.519Z",
+      "id": "6zJODdb7L0Q5zxV7",
+      "name": "Final"
+    }
+  ]
+}
