@@ -2,7 +2,7 @@
 // Renders the chat UI and talks directly to the n8n Chat Trigger webhook.
 
 // TODO: replace with your n8n Chat Trigger production webhook URL
-const WEBHOOK_URL = 'https://respective-ext-evident-geology.trycloudflare.com/webhook/5377f6ae-00ef-4eb5-b2f2-154ff33ff646/chat';
+const WEBHOOK_URL = 'https://codeoracles.app.n8n.cloud/webhook/5377f6ae-00ef-4eb5-b2f2-154ff33ff646/chat';
 
 document.addEventListener('DOMContentLoaded', () => {
   const messagesEl = document.getElementById('messages');
